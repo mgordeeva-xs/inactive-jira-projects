@@ -33,7 +33,7 @@ HEADERS = [
     "Project Key", "Project Name", "Project URL", "Issue Count",
     "Project Lead", "Lead Email", "Lead Status", "Last Updated", "Days Inactive",
     "First Seen Empty", "Empty Weeks", "Flag",
-    "Jira Task", "Task URL", "Last Checked",
+    "Jira Task", "Task URL", "Last Checked", "Flagged for Removal",
 ]
 
 # ── ЛОГИРОВАНИЕ ───────────────────────────────────────────────
