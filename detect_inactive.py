@@ -155,11 +155,38 @@ PROJECTS_CSV = OUTPUT_DIR / "inactive_projects.csv"
 HISTORY_CSV  = OUTPUT_DIR / "inactive_projects_history.csv"
 
 def read_existing_csv():
-    """Читаем текущий CSV чтобы сохранить First Seen Empty и Jira Task между запусками."""
-    if not PROJECTS_CSV.exists():
-        return {}
-    with open(PROJECTS_CSV, newline="", encoding="utf-8") as f:
-        return {r["Project Key"]: r for r in csv.DictReader(f) if r.get("Project Key")}
+    """
+    Читаем данные для сохранения First Seen Empty и Jira Task между запусками.
+
+    First Seen Empty берётся из истории (самая ранняя запись по проекту) —
+    так дата не теряется даже если проект временно пропал из снапшота.
+    Jira Task / Task URL берётся из последней записи в истории.
+    """
+    existing = {}
+
+    if HISTORY_CSV.exists():
+        with open(HISTORY_CSV, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                key = r.get("Project Key")
+                if not key:
+                    continue
+                if key not in existing:
+                    existing[key] = r
+                else:
+                    # Сохраняем самую раннюю First Seen Empty
+                    prev = existing[key]
+                    if r.get("First Seen Empty") and (
+                        not prev.get("First Seen Empty") or
+                        r["First Seen Empty"] < prev["First Seen Empty"]
+                    ):
+                        prev["First Seen Empty"] = r["First Seen Empty"]
+                    # Jira Task берём из последней записи (самая свежая)
+                    if r.get("Jira Task"):
+                        prev["Jira Task"] = r["Jira Task"]
+                    if r.get("Task URL"):
+                        prev["Task URL"] = r["Task URL"]
+
+    return existing
 
 def write_projects_csv(report):
     """Полная перезапись projects CSV."""
