@@ -31,7 +31,7 @@ TEST_LIMIT        = int(os.environ.get("TEST_LIMIT", "0"))
 
 HEADERS = [
     "Project Key", "Project Name", "Project URL", "Issue Count",
-    "Project Lead", "Lead Status", "Last Updated", "Days Inactive",
+    "Project Lead", "Lead Email", "Lead Status", "Last Updated", "Days Inactive",
     "First Seen Empty", "Empty Weeks", "Flag",
     "Jira Task", "Task URL", "Last Checked",
 ]
@@ -78,6 +78,22 @@ def jira_get(path, params=None, retries=3):
             time.sleep(3)
     return {}
 
+_email_cache = {}
+
+def get_lead_email(account_id):
+    """Получает email лида по accountId. Результаты кэшируются."""
+    if not account_id:
+        return ""
+    if account_id in _email_cache:
+        return _email_cache[account_id]
+    try:
+        data  = jira_get("/rest/api/3/user", params={"accountId": account_id})
+        email = data.get("emailAddress", "")
+    except Exception:
+        email = ""
+    _email_cache[account_id] = email
+    return email
+
 def get_all_projects():
     log.info("Загружаю все проекты из Jira...")
     projects, start_at = [], 0
@@ -110,9 +126,10 @@ def filter_projects(projects):
         if lead_name == EXCLUDED_LEAD:                          skipped["lead"]     += 1; continue
         if any(kw in name.lower() for kw in EXCLUDED_KEYWORDS): skipped["keyword"]  += 1; continue
         result.append({
-            "projectKey": p["key"], "projectName": p["name"],
-            "projectUrl": f"{JIRA_URL}/projects/{p['key']}",
+            "projectKey":  p["key"], "projectName": p["name"],
+            "projectUrl":  f"{JIRA_URL}/projects/{p['key']}",
             "projectLead": lead_name, "leadActive": lead_active,
+            "leadAccountId": lead.get("accountId", ""),
         })
     log.info(f"После исключений: {len(result)} (пропущено: {skipped})")
     return result
@@ -273,6 +290,7 @@ def build_report(projects_data, existing):
             "Project URL":      p["projectUrl"],
             "Issue Count":      issue_count,
             "Project Lead":     p["projectLead"],
+            "Lead Email":       p.get("leadEmail", ""),
             "Lead Status":      lead_status,
             "Last Updated":     last_updated_display,
             "Days Inactive":    days_inactive,
@@ -316,7 +334,8 @@ def main():
         if i % 100 == 0:
             log.info(f"  {i}/{len(filtered_projects)}...")
         count, last_updated = get_issue_info(proj["projectKey"])
-        projects_data.append({**proj, "issueCount": count, "lastUpdated": last_updated})
+        lead_email = get_lead_email(proj["leadAccountId"])
+        projects_data.append({**proj, "issueCount": count, "lastUpdated": last_updated, "leadEmail": lead_email})
     log.info("Issues получены")
 
     # 3. Читаем существующий CSV (для сохранения First Seen Empty и Jira Task)
