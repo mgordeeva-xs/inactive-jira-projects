@@ -31,6 +31,7 @@ JIRA_EMAIL     = os.environ.get("JIRA_EMAIL", "m.gordeeva@xsolla.com")
 JIRA_API_TOKEN = os.environ.get("JIRA_API_TOKEN", "")
 OUTPUT_DIR     = Path(os.environ.get("OUTPUT_DIR", "."))
 DRY_RUN        = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
+MAX_TASKS      = int(os.environ.get("MAX_TASKS", "0"))  # 0 = без лимита
 
 GC_PROJECT_KEY    = "GC"
 ISSUE_TYPE_ID     = "16716"   # "Jira Project" in GC
@@ -241,6 +242,10 @@ def main():
         log.info("Нечего создавать.")
         return
 
+    if MAX_TASKS:
+        candidates = candidates[:MAX_TASKS]
+        log.info(f"MAX_TASKS={MAX_TASKS}, создаём только первую задачу")
+
     created = 0
     for row in candidates:
         log.info(f"Создаю задачу для {row['Project Key']} ({row['Project Name']})...")
@@ -270,6 +275,34 @@ def main():
         w.writerows(rows)
 
     log.info(f"CSV обновлён: {PROJECTS_CSV}")
+
+    # Обновляем историю — проставляем Jira Task / Task URL / Flag в существующих строках
+    HISTORY_CSV = OUTPUT_DIR / "inactive_projects_history.csv"
+    if HISTORY_CSV.exists():
+        updated_map = {
+            r["Project Key"]: r for r in rows if r.get("Jira Task")
+        }
+        with open(HISTORY_CSV, newline="", encoding="utf-8") as f:
+            hist_rows = list(csv.DictReader(f))
+
+        for hr in hist_rows:
+            key = hr.get("Project Key", "")
+            if key in updated_map:
+                hr["Jira Task"] = updated_map[key]["Jira Task"]
+                hr["Task URL"]  = updated_map[key]["Task URL"]
+                hr["Flag"]      = updated_map[key]["Flag"]
+                hr.setdefault("Flagged for Removal", "")
+
+        hist_fieldnames = HEADERS
+        hist_extra = [k for k in hist_rows[0].keys() if k not in hist_fieldnames]
+        hist_fieldnames = hist_fieldnames + hist_extra
+
+        with open(HISTORY_CSV, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=hist_fieldnames, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(hist_rows)
+        log.info(f"History CSV обновлён: {HISTORY_CSV}")
+
     log.info(f"\n{'='*60}\nГотово. Создано задач: {created}\n{'='*60}\n")
 
 if __name__ == "__main__":
